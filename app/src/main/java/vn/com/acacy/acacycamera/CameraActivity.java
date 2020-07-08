@@ -13,13 +13,16 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import java.util.HashMap;
+
 import vn.com.acacy.cameralibrary.YCamera;
 import vn.com.acacy.cameralibrary.interfaces.ICameraCallback;
 
 public class CameraActivity extends AppCompatActivity implements ICameraCallback {
     private YCamera camera;
     private static final int REQUEST_CAMERA_PERMISSION = 200;
-    private int requestCode, ratio;
+    private HashMap<String,Object> data;
+    private int ratio;
     private static CameraResultListener listener;
     private AlertDialog alert = null;
 
@@ -32,12 +35,8 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
         camera.enableSound(false);
         camera.setCameraCallBack(this);
         try {
-            requestCode = getIntent().getIntExtra("REQUEST_CODE", 0);
+            data = (HashMap<String, Object>) getIntent().getSerializableExtra("DATA");
             ratio = getIntent().getIntExtra("RATIO", 43);
-            if (requestCode == 0) {
-                Toast.makeText(this, "Request code not found", Toast.LENGTH_SHORT).show();
-                return;
-            }
         } catch (Exception ex) {
             Toast.makeText(this, ex.getMessage(), Toast.LENGTH_SHORT).show();
             return;
@@ -56,7 +55,7 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
             return;
         }
         if (camera != null) {
-            camera.startCamera(requestCode, ratio);
+            camera.startCamera(ratio,data);
         }
     }
 
@@ -92,14 +91,14 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
             }
         } else {
             if (camera != null) {
-                camera.startCamera(this.requestCode, ratio);
+                camera.startCamera(ratio,this.data);
             }
         }
     }
 
     @Override
-    public void onPicture(String path, int requestCode) {
-        listener.onCameraResult(path, requestCode);
+    public void onPicture(String path, HashMap<String,Object> data) {
+        listener.onCameraResult(path, data);
     }
 
     @Override
@@ -111,7 +110,6 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
                 return;
             }
         });
-
     }
 
     @Override
@@ -123,7 +121,7 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
     }
 
     public interface CameraResultListener {
-        void onCameraResult(String path, int requestCode);
+        void onCameraResult(String path, HashMap<String,Object> data);
     }
 
     public void Alert(String Title, String Message) {
@@ -134,7 +132,7 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
         this.alert.setButton("OK", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 dialog.dismiss();
-                camera.startCamera(requestCode, ratio);
+                camera.startCamera(ratio,data);
             }
         });
         this.alert.show();

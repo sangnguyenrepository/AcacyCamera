@@ -1,6 +1,7 @@
 package vn.com.acacy.cameralibrary;
 
 import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -28,7 +29,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
 import android.view.Gravity;
@@ -47,6 +47,7 @@ import androidx.annotation.NonNull;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 import de.hdodenhof.circleimageview.CircleImageView;
@@ -111,7 +112,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     private TextView txt_cancel, txt_ok;
     private ICameraCallback callback;
     private TouchImageView img_temp;
-    private int requestCode;
+    private HashMap<String, Object> requestCode;
     private String path = "";
     private FrameLayout layout_action;
     private Activity activity;
@@ -491,9 +492,9 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
 
     protected void updatePreview(boolean autoFocus) {
         try {
-            if (autoFocus) {
+            if (isAutoFocusSupported() && autoFocus)
                 captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START);
-            } else {
+            else {
                 captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
             }
             cameraCaptureSessions.setRepeatingRequest(captureRequestBuilder.build(), null, mBackgroundHandler);
@@ -585,11 +586,11 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
-    public void startCamera(int requestCode, int ratio) {
+    public void startCamera(int ratio, HashMap<String, Object> keys) {
         try {
             this.ratioType = ratio;
             img_takephoto.setClickable(true);
-            this.requestCode = requestCode;
+            this.requestCode = keys;
             startBackgroundThread();
             if (textureView.isAvailable()) {
                 openCamera(textureView.getWidth(), textureView.getHeight(), ratioType);
@@ -676,6 +677,54 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    private boolean isHardwareLevelSupported(int requiredLevel) {
+        boolean res = false;
+        if (cameraDevice == null)
+            return res;
+        try {
+            CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics cameraCharacteristics = manager.getCameraCharacteristics(cameraId);
+
+            int deviceLevel = cameraCharacteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+            if (deviceLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) {
+                res = requiredLevel == deviceLevel;
+            } else {
+                res = requiredLevel <= deviceLevel;
+            }
+
+        } catch (Exception ex) {
+            if (callback != null) {
+                callback.onError(ex.getMessage());
+            }
+        }
+        return res;
+    }
+
+    private boolean isAutoFocusSupported() {
+        boolean isSupport = isHardwareLevelSupported(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) || getMinimumFocusDistance() > 0;
+        return isSupport;
+    }
+
+    private float getMinimumFocusDistance() {
+        if (cameraId == null)
+            return 0;
+        Float minimumLens = null;
+        try {
+            CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics c = manager.getCameraCharacteristics(cameraId);
+            minimumLens = c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+        } catch (Exception ex) {
+            if (callback != null) {
+                callback.onError(ex.getMessage());
+            }
+        }
+        if (minimumLens != null)
+            return minimumLens;
+        return 0;
+    }
+
+
     private boolean checkBackCamera() {
         String backCameraId = null;
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
@@ -716,7 +765,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
             final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureBuilder.addTarget(reader.getSurface());
             captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_MODE_AUTO);
+                    CaptureRequest.CONTROL_AF_TRIGGER_START);
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
             switch (mTotalRotation) {
                 case SENSOR_ORIENTATION_DEFAULT_DEGREES:
@@ -741,6 +790,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                     Runnable displayImage = new DisplayImage();
                     new Thread(displayImage).start();
                 }
+
                 @Override
                 public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
                     super.onCaptureFailed(session, request, failure);
@@ -752,6 +802,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                 public void onReady(@NonNull CameraCaptureSession session) {
                     super.onReady(session);
                 }
+
                 @Override
                 public void onConfigured(final CameraCaptureSession session) {
                     try {
@@ -763,6 +814,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                         }
                     }
                 }
+
                 @Override
                 public void onConfigureFailed(CameraCaptureSession session) {
                     stopBackgroundThread();

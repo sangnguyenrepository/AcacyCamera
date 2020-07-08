@@ -758,7 +758,8 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                 mediaPlayer = MediaPlayer.create(getContext(), R.raw.camera_take_picture);
                 mediaPlayer.start();
             }
-            ImageReader reader = ImageReader.newInstance(sizePreview.getWidth(), sizePreview.getHeight(), ImageFormat.JPEG, 2);
+            Size maxImage = SizeUtils.getMaxImage(activity,ratioType,cameraId);
+            ImageReader reader = ImageReader.newInstance(maxImage.getWidth(), maxImage.getHeight(), ImageFormat.JPEG, 2);
             List<Surface> outputSurfaces = new ArrayList<Surface>(2);
             outputSurfaces.add(reader.getSurface());
             outputSurfaces.add(new Surface(textureView.getSurfaceTexture()));

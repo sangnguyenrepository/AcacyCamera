@@ -5,7 +5,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.util.Log;
+import android.os.Environment;
 import android.view.View;
 import android.widget.Toast;
 
@@ -16,24 +16,28 @@ import androidx.core.app.ActivityCompat;
 import java.util.HashMap;
 
 import vn.com.acacy.cameralibrary.YCamera;
+import vn.com.acacy.cameralibrary.interfaces.ICameraAction;
 import vn.com.acacy.cameralibrary.interfaces.ICameraCallback;
 
 public class CameraActivity extends AppCompatActivity implements ICameraCallback {
     private YCamera camera;
     private static final int REQUEST_CAMERA_PERMISSION = 200;
-    private HashMap<String,Object> data;
+    private HashMap<String, Object> data;
     private int ratio;
     private static CameraResultListener listener;
     private AlertDialog alert = null;
+    private ICameraAction action;
+    private String path = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera);
         camera = findViewById(R.id.aca_camera);
-        camera.enableAutoFocus(true);
-        camera.enableSound(false);
+        camera.isAutoFocus(true);
+        camera.isSound(true);
         camera.setCameraCallBack(this);
+        path = Environment.getExternalStorageDirectory() + "/IMAGE_ACACY/" + "IMAGE_TEMP_ACACY" + ".jpg";
         try {
             data = (HashMap<String, Object>) getIntent().getSerializableExtra("DATA");
             ratio = getIntent().getIntExtra("RATIO", 43);
@@ -55,16 +59,13 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
             return;
         }
         if (camera != null) {
-            camera.startCamera(ratio,data);
+            camera.startCamera(path, ratio, data);
         }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (camera != null) {
-            camera.stopCamera();
-        }
     }
 
     @Override
@@ -91,13 +92,13 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
             }
         } else {
             if (camera != null) {
-                camera.startCamera(ratio,this.data);
+                camera.startCamera(path, ratio, this.data);
             }
         }
     }
 
     @Override
-    public void onPicture(String path, HashMap<String,Object> data) {
+    public void onPicture(String path, HashMap<String, Object> data) {
         listener.onCameraResult(path, data);
     }
 
@@ -121,7 +122,7 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
     }
 
     public interface CameraResultListener {
-        void onCameraResult(String path, HashMap<String,Object> data);
+        void onCameraResult(String path, HashMap<String, Object> data);
     }
 
     public void Alert(String Title, String Message) {
@@ -132,7 +133,7 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
         this.alert.setButton("OK", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 dialog.dismiss();
-                camera.startCamera(ratio,data);
+                camera.startCamera(path, ratio, data);
             }
         });
         this.alert.show();
@@ -140,7 +141,7 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
 
     @Override
     public void onBackPressed() {
-        if (!camera.isShowAction()) {
+        if (!camera.getAction()) {
             super.onBackPressed();
         } else {
             return;

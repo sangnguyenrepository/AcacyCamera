@@ -25,42 +25,30 @@ import java.util.List;
 
 @SuppressLint("NewApi")
 public class ImageUtils {
-    private static class SingletonHelper {
-        private static final ImageUtils INSTANCE = new ImageUtils();
-    }
-
-    public static ImageUtils getInstance() {
-        return SingletonHelper.INSTANCE;
-    }
-
-    public synchronized void saveImage(final File file, ImageReader reader, String cameraId) {
+    public static synchronized boolean saveImage(final File file, ImageReader reader, String cameraId) {
+        boolean isFinish = false;
         Image image = null;
+        image = reader.acquireLatestImage();
+        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+        final byte[] bytes = new byte[buffer.capacity()];
+        buffer.get(bytes);
+        OutputStream output = null;
         try {
-            image = reader.acquireLatestImage();
-            ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-            final byte[] bytes = new byte[buffer.capacity()];
-            buffer.get(bytes);
-//            final byte[] bytes = NV21toJPEG(YUV420toNV21(image), image.getWidth(), image.getHeight(), 100);
-            OutputStream output = null;
-            try {
-                output = new FileOutputStream(file);
-                output.write(bytes);
-                output.flush();
-                output.close();
-                saveBitmapFile(file, cameraId);
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        } finally {
-            if (image != null) {
-                image.close();
-            }
+            output = new FileOutputStream(file);
+            output.write(bytes);
+            output.flush();
+            output.close();
+            image.close();
+            isFinish = saveBitmapFile(file, cameraId);
+        } catch (FileNotFoundException ex) {
+            isFinish = false;
+        } catch (IOException ex) {
+            isFinish = false;
         }
-
+        return isFinish;
     }
 
+    // final byte[] bytes = NV21toJPEG(YUV420toNV21(image), image.getWidth(), image.getHeight(), 100);
     private static byte[] NV21toJPEG(byte[] nv21, int width, int height, int quality) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
@@ -136,15 +124,16 @@ public class ImageUtils {
         return 0;
     }
 
-    public void saveBitmapFile(File file, String cameraId) throws IOException {
+    public static boolean saveBitmapFile(File file, String cameraId) throws IOException {
         try {
             Bitmap bitmap = MakeSquare(readBytesFromFile(file.getAbsolutePath()), Integer.parseInt(cameraId));
             file.createNewFile();
             FileOutputStream outputStream = new FileOutputStream(file);
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            return false;
         }
+        return true;
     }
 
     private static byte[] readBytesFromFile(String filePath) {
@@ -169,7 +158,7 @@ public class ImageUtils {
         return bytesArray;
     }
 
-    public boolean isImageFile(String filePath) {
+    public static boolean isImageFile(String filePath) {
         if (filePath.endsWith(".jpg") || filePath.endsWith(".png")) {
             return true;
         }
@@ -197,7 +186,7 @@ public class ImageUtils {
         return bitPicFinal;
     }
 
-    public List<String> getlistImage(String root) {
+    public static List<String> getListImage(String root) {
         List<String> dest = new ArrayList<>();
         List<File> list = new ArrayList<>();
         File directory = new File(root);
@@ -217,7 +206,7 @@ public class ImageUtils {
         }
     }
 
-    public List<String> sortFile(final List<File> fileList) {
+    public static List<String> sortFile(final List<File> fileList) {
         if (fileList.size() > 1) {
             for (int i = 0; i < fileList.size(); i++) {
                 int pos = i;
@@ -238,7 +227,7 @@ public class ImageUtils {
         return dest;
     }
 
-    public String getTimeImage(String fileName) {
+    public static String getTimeImage(String fileName) {
         for (int i = 0; i < fileName.length(); i++) {
             if (Character.isDigit(fileName.charAt(i))) {
                 fileName = fileName.substring(i, fileName.indexOf("."));

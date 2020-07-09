@@ -25,7 +25,6 @@ import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.ImageReader;
 import android.media.MediaPlayer;
 import android.os.Build;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.AttributeSet;
@@ -93,32 +92,37 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
 
     private static final int MAX_PREVIEW_WIDTH = 3264;
     private static final int MAX_PREVIEW_HEIGHT = 2448;
-    private int ratioType = 43;
+    private int ratio = 43;
     private String cameraId = CAMERA_BACK;
     private AutoFitTextureView textureView;
     protected CameraDevice cameraDevice;
-    protected CameraCaptureSession cameraCaptureSessions;
+    protected CameraCaptureSession captureSessions;
     protected CaptureRequest.Builder captureRequestBuilder;
     private Size sizePreview;
     private boolean isFlashSupported;
-    private Handler mBackgroundHandler;
-    private HandlerThread mBackgroundThread;
-    private ImageView img_takephoto, img_switch, img_flash, img_mode;
-    private boolean autoFocus = true;
-    private boolean enableSound = false;
+    private Handler handler;
+    private HandlerThread thread;
+    private ImageView img_capture, img_switch, img_flash, img_mode;
+    private boolean isFocus = true;
+    private boolean isSound = false;
     private int flashMode = 0;
-    private CircleImageView img_thumNail;
-    private MediaPlayer mediaPlayer;
-    private TextView txt_cancel, txt_ok;
+    private CircleImageView img_thumb;
+    private MediaPlayer media;
+    private TextView txtCancel, txtOk;
     private ICameraCallback callback;
     private TouchImageView img_temp;
-    private HashMap<String, Object> requestCode;
+    private HashMap<String, Object> data;
     private String path = "";
     private FrameLayout layout_action;
     private Activity activity;
     private Bitmap bitmap = null;
     private RelativeLayout layout_option, layout_take_photo, layout_confirm;
     private boolean isShowAction = false;
+    private CameraManager manager;
+    private CameraCharacteristics characteristics;
+    public static final String REQUEST_CODE = "REQUEST_CODE";
+    public static final String DATA = "DATA";
+    public Thread handleImageThread;
 
     public YCamera(Context context) {
         super(context);
@@ -139,29 +143,38 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     }
 
     private void init() {
-        inflate(activity, R.layout.camera_layout, this);
-        textureView = findViewById(R.id.texture);
-        assert textureView != null;
-        img_takephoto = (ImageView) findViewById(R.id.img_takephoto);
-        img_switch = findViewById(R.id.img_switch);
-        img_flash = findViewById(R.id.img_flash);
-        img_thumNail = findViewById(R.id.img_thumNail);
-        img_mode = findViewById(R.id.img_mode);
-        layout_action = findViewById(R.id.layout_action);
-        layout_option = findViewById(R.id.layout_option);
-        layout_confirm = findViewById(R.id.layout_confirm);
-        layout_take_photo = findViewById(R.id.layout_take_photo);
-        img_temp = findViewById(R.id.img_temp);
-        txt_ok = findViewById(R.id.txt_ok);
-        txt_cancel = findViewById(R.id.txt_cancel);
-        txt_ok.setOnClickListener(this);
-        txt_cancel.setOnClickListener(this);
-        img_takephoto.setOnClickListener(this);
-        img_thumNail.setOnClickListener(this);
-        img_switch.setOnClickListener(this);
-        img_flash.setOnClickListener(this);
-        img_mode.setOnClickListener(this);
-        textureView.setSurfaceTextureListener(YCamera.this);
+        try {
+            inflate(activity, R.layout.camera_layout, this);
+            textureView = findViewById(R.id.texture);
+            assert textureView != null;
+            img_capture = (ImageView) findViewById(R.id.img_takephoto);
+            img_switch = findViewById(R.id.img_switch);
+            img_flash = findViewById(R.id.img_flash);
+            img_thumb = findViewById(R.id.img_thumNail);
+            img_mode = findViewById(R.id.img_mode);
+            layout_action = findViewById(R.id.layout_action);
+            layout_option = findViewById(R.id.layout_option);
+            layout_confirm = findViewById(R.id.layout_confirm);
+            layout_take_photo = findViewById(R.id.layout_take_photo);
+            img_temp = findViewById(R.id.img_temp);
+            txtOk = findViewById(R.id.txt_ok);
+            txtCancel = findViewById(R.id.txt_cancel);
+            txtOk.setOnClickListener(this);
+            txtCancel.setOnClickListener(this);
+            img_capture.setOnClickListener(this);
+            img_thumb.setOnClickListener(this);
+            img_switch.setOnClickListener(this);
+            img_flash.setOnClickListener(this);
+            img_mode.setOnClickListener(this);
+            textureView.setSurfaceTextureListener(YCamera.this);
+            manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+            characteristics = manager.getCameraCharacteristics(cameraId);
+        } catch (CameraAccessException ex) {
+            if (callback != null) {
+                callback.onError(ex.getMessage());
+            }
+            return;
+        }
     }
 
     public void setCameraCallBack(ICameraCallback iCameraCallback) {
@@ -169,7 +182,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     }
 
     private void configureLayout() {
-        if (checkBackCamera()) {
+        if (isBackCameraAvailable()) {
             img_switch.setVisibility(View.VISIBLE);
         }
         RelativeLayout.LayoutParams paramsR = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
@@ -209,32 +222,23 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     public void onClick(View view) {
         int id = view.getId();
         if (id == R.id.img_takephoto) {
-            takePicture();
+            capture();
         } else if (id == R.id.img_switch) {
             if (cameraId.equals(CAMERA_FRONT)) {
-                try {
-                    cameraId = CAMERA_BACK;
-                    closeCamera();
-                    reopenCamera();
-                    Toast.makeText(activity, "Camera back on.", Toast.LENGTH_SHORT).show();
-                } catch (Exception ex) {
-                    if (callback != null) {
-                        callback.onError(ex.getMessage());
-                    }
-                    return;
-                }
+                cameraId = CAMERA_BACK;
+                Toast.makeText(activity, "Camera back on.", Toast.LENGTH_SHORT).show();
             } else if (cameraId.equals(CAMERA_BACK)) {
-                try {
-                    cameraId = CAMERA_FRONT;
-                    closeCamera();
-                    reopenCamera();
-                    Toast.makeText(activity, "Camera front on.", Toast.LENGTH_SHORT).show();
-                } catch (Exception ex) {
-                    if (callback != null) {
-                        callback.onError(ex.getMessage());
-                    }
-                    return;
+                cameraId = CAMERA_FRONT;
+                Toast.makeText(activity, "Camera front on.", Toast.LENGTH_SHORT).show();
+            }
+            try {
+                close();
+                open(textureView.getWidth(), textureView.getHeight(), ratio);
+            } catch (Exception ex) {
+                if (callback != null) {
+                    callback.onError(ex.getMessage());
                 }
+                return;
             }
         } else if (id == R.id.img_flash) {
             try {
@@ -262,7 +266,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                 layout_action.setVisibility(GONE);
                 layout_option.setVisibility(VISIBLE);
                 layout_take_photo.setVisibility(VISIBLE);
-                createCameraPreview(autoFocus);
+                preview();
             } catch (Exception ex) {
                 if (callback != null) {
                     callback.onError(ex.getMessage());
@@ -275,14 +279,14 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                     callback.onCaptureCompleted();
                     File file = new File(path);
                     if (file.exists()) {
-                        callback.onPicture(path, requestCode);
+                        callback.onPicture(path, data);
                     }
                 }
                 isShowAction = false;
                 layout_action.setVisibility(GONE);
                 layout_option.setVisibility(VISIBLE);
                 layout_take_photo.setVisibility(VISIBLE);
-                createCameraPreview(autoFocus);
+                preview();
             } catch (Exception ex) {
                 if (callback != null) {
                     callback.onError(ex.getMessage());
@@ -291,17 +295,18 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
             }
         } else if (id == R.id.img_mode) {
             try {
-                if (ratioType == 43) {
+                if (ratio == 43) {
                     if (SizeUtils.supportFullScreen(activity, cameraId)) {
-                        ratioType = 100;
+                        ratio = 100;
                     } else {
-                        ratioType = 169;
+                        ratio = 169;
                     }
                 } else {
-                    ratioType = 43;
+                    ratio = 43;
                 }
+                close();
                 Intent intent = activity.getIntent();
-                intent.putExtra("RATIO", ratioType);
+                intent.putExtra("RATIO", ratio);
                 activity.finish();
                 activity.startActivity(intent);
             } catch (Exception ex) {
@@ -317,7 +322,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
         try {
-            openCamera(width, height, ratioType);
+            open(width, height, ratio);
         } catch (Exception ex) {
             if (callback != null) {
                 callback.onError(ex.getMessage());
@@ -336,78 +341,13 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     }
 
     @Override
-    public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
-    }
-
-    private void openCamera(int width, int height, int ratioType) {
-        configureLayout();
-        configureTransform(width, height);
-        CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
-        try {
-            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-            StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-            assert map != null;
-            int deviceOrientation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            mTotalRotation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-            boolean swapRotation = false;
-            switch (deviceOrientation) {
-                case Surface.ROTATION_0:
-                case Surface.ROTATION_180:
-                    if (mTotalRotation == 90 || mTotalRotation == 270) {
-                        swapRotation = true;
-                    }
-                    break;
-                case Surface.ROTATION_90:
-                case Surface.ROTATION_270:
-                    if (mTotalRotation == 0 || mTotalRotation == 180) {
-                        swapRotation = true;
-                    }
-                    break;
-            }
-            Point displaySize = new Point();
-            activity.getWindowManager().getDefaultDisplay().getRealSize(displaySize);
-            int rotatedPreviewWidth = width;
-            int rotatedPreviewHeight = height;
-            int maxPreviewWidth = displaySize.x;
-            int maxPreviewHeight = displaySize.y;
-            if (swapRotation) {
-                rotatedPreviewWidth = height;
-                rotatedPreviewHeight = width;
-                maxPreviewWidth = displaySize.y;
-                maxPreviewHeight = displaySize.x;
-            }
-
-            if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
-                maxPreviewWidth = MAX_PREVIEW_WIDTH;
-            }
-            if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
-                maxPreviewHeight = MAX_PREVIEW_HEIGHT;
-            }
-
-            Size largest = SizeUtils.getMaxImage(activity, ratioType, cameraId);
-            sizePreview = SizeUtils.chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest, ratioType);
-            int orientation = getResources().getConfiguration().orientation;
-            if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                textureView.setAspectRatio(
-                        sizePreview.getWidth(), sizePreview.getHeight(), ratioType);
-            } else {
-                textureView.setAspectRatio(
-                        sizePreview.getHeight(), sizePreview.getWidth(), ratioType);
-            }
-            manager.openCamera(cameraId, stateCallback, null);
-        } catch (CameraAccessException ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-            }
-            return;
-        }
-    }
+    public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) { }
 
     private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
         @Override
         public void onOpened(CameraDevice camera) {
             cameraDevice = camera;
-            createCameraPreview(autoFocus);
+            preview();
         }
 
         @Override
@@ -449,69 +389,12 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     };
 
-    protected void createCameraPreview(final boolean autoFocus) {
+    protected void stopThread() {
+        thread.quitSafely();
         try {
-            CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
-            final CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-            final SurfaceTexture texture = textureView.getSurfaceTexture();
-            assert texture != null;
-            texture.setDefaultBufferSize(sizePreview.getWidth(), sizePreview.getHeight());
-            Surface surface = new Surface(texture);
-            captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            captureRequestBuilder.addTarget(surface);
-            cameraDevice.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
-                @Override
-                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
-                    if (null == cameraDevice) {
-                        return;
-                    }
-                    cameraCaptureSessions = cameraCaptureSession;
-                    updatePreview(autoFocus);
-                    if (!autoFocus) {
-                        textureView.setOnTouchListener(new OnTouchHandler(characteristics, captureRequestBuilder, cameraCaptureSessions, mBackgroundHandler));
-                    } else {
-                        textureView.setOnTouchListener(null);
-                    }
-                }
-
-                @Override
-                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
-                    if (callback != null) {
-                        callback.onError("Has an error, please try it again !");
-                        return;
-                    }
-                }
-            }, null);
-        } catch (CameraAccessException ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-            }
-            return;
-        }
-    }
-
-    protected void updatePreview(boolean autoFocus) {
-        try {
-            if (isAutoFocusSupported() && autoFocus)
-                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START);
-            else {
-                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
-            }
-            cameraCaptureSessions.setRepeatingRequest(captureRequestBuilder.build(), null, mBackgroundHandler);
-        } catch (CameraAccessException ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-            }
-            return;
-        }
-    }
-
-    protected void stopBackgroundThread() {
-        mBackgroundThread.quitSafely();
-        try {
-            mBackgroundThread.join();
-            mBackgroundThread = null;
-            mBackgroundHandler = null;
+            thread.join();
+            thread = null;
+            handler = null;
         } catch (InterruptedException ex) {
             if (callback != null) {
                 callback.onError(ex.getMessage());
@@ -520,11 +403,27 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
-    protected void startBackgroundThread() {
+    public void startCamera(String path, int ratio, HashMap<String, Object> data) {
         try {
-            mBackgroundThread = new HandlerThread("Camera Background");
-            mBackgroundThread.start();
-            mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
+            this.path = path;
+            this.ratio = ratio;
+            img_capture.setClickable(true);
+            this.data = data;
+            startThread();
+            open(textureView.getWidth(), textureView.getHeight(), this.ratio);
+        } catch (Exception ex) {
+            if (callback != null) {
+                callback.onError(ex.getMessage());
+            }
+            return;
+        }
+    }
+
+    protected void startThread() {
+        try {
+            thread = new HandlerThread("Camera Background");
+            thread.start();
+            handler = new Handler(thread.getLooper());
         } catch (Exception ex) {
             if (callback != null) {
                 callback.onError(ex.getMessage());
@@ -562,19 +461,128 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
-    private static int sensorToDeviceRotation(CameraCharacteristics cameraCharacteristics, int deviceOrentation) {
-        int sensorOrentation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-        deviceOrentation = ORIENTATIONS.get(deviceOrentation);
-        return (sensorOrentation + deviceOrentation + 360) % 360;
+    private void open(int width, int height, int ratio) {
+        if (textureView.isAvailable()) {
+            configureLayout();
+            configureTransform(width, height);
+            try {
+                characteristics = manager.getCameraCharacteristics(cameraId);
+                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                assert map != null;
+                int deviceOrientation = activity.getWindowManager().getDefaultDisplay().getRotation();
+                mTotalRotation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                boolean swapRotation = false;
+                switch (deviceOrientation) {
+                    case Surface.ROTATION_0:
+                    case Surface.ROTATION_180:
+                        if (mTotalRotation == 90 || mTotalRotation == 270) {
+                            swapRotation = true;
+                        }
+                        break;
+                    case Surface.ROTATION_90:
+                    case Surface.ROTATION_270:
+                        if (mTotalRotation == 0 || mTotalRotation == 180) {
+                            swapRotation = true;
+                        }
+                        break;
+                }
+                Point displaySize = new Point();
+                activity.getWindowManager().getDefaultDisplay().getRealSize(displaySize);
+                int rotatedPreviewWidth = width;
+                int rotatedPreviewHeight = height;
+                int maxPreviewWidth = displaySize.x;
+                int maxPreviewHeight = displaySize.y;
+                if (swapRotation) {
+                    rotatedPreviewWidth = height;
+                    rotatedPreviewHeight = width;
+                    maxPreviewWidth = displaySize.y;
+                    maxPreviewHeight = displaySize.x;
+                }
+
+                if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
+                    maxPreviewWidth = MAX_PREVIEW_WIDTH;
+                }
+                if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
+                    maxPreviewHeight = MAX_PREVIEW_HEIGHT;
+                }
+
+                Size largest = SizeUtils.getMaxImage(activity, ratio, cameraId);
+                sizePreview = SizeUtils.chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest, ratio);
+                int orientation = getResources().getConfiguration().orientation;
+                if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                    textureView.setAspectRatio(
+                            sizePreview.getWidth(), sizePreview.getHeight(), ratio);
+                } else {
+                    textureView.setAspectRatio(
+                            sizePreview.getHeight(), sizePreview.getWidth(), ratio);
+                }
+                manager.openCamera(cameraId, stateCallback, handler);
+            } catch (CameraAccessException ex) {
+                if (callback != null) {
+                    callback.onError(ex.getMessage());
+                }
+                return;
+            }
+        } else {
+            textureView.setSurfaceTextureListener(this);
+        }
+
     }
 
-    public void closeCamera() {
+    private void preview() {
         try {
-            if (null != cameraCaptureSessions) {
-                cameraCaptureSessions.close();
-                cameraCaptureSessions = null;
+            characteristics = manager.getCameraCharacteristics(cameraId);
+            final SurfaceTexture texture = textureView.getSurfaceTexture();
+            assert texture != null;
+            texture.setDefaultBufferSize(sizePreview.getWidth(), sizePreview.getHeight());
+            Surface surface = new Surface(texture);
+            captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            captureRequestBuilder.addTarget(surface);
+            cameraDevice.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                    try {
+                        captureSessions = cameraCaptureSession;
+                        if (isFocus && isAutoFocusSupported()) {
+                            textureView.setOnTouchListener(null);
+                            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                        } else {
+                            textureView.setOnTouchListener(new OnTouchHandler(characteristics, captureRequestBuilder, cameraCaptureSession, handler));
+                        }
+
+                        captureSessions.setRepeatingRequest(captureRequestBuilder.build(), null, handler);
+                    } catch (CameraAccessException ex) {
+                        if (callback != null) {
+                            callback.onError(ex.getMessage());
+                        }
+                        return;
+                    }
+                }
+
+                @Override
+                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+                    if (callback != null) {
+                        callback.onError("Has an error, please try it again !");
+                        return;
+                    }
+                }
+            }, handler);
+        } catch (CameraAccessException ex) {
+            if (callback != null) {
+                callback.onError(ex.getMessage());
             }
-            if (null != cameraDevice) {
+            return;
+        }
+    }
+
+    private void close() {
+        try {
+            if (captureSessions != null) {
+                captureSessions.close();
+                captureSessions = null;
+            }
+            if (cameraDevice != null) {
                 cameraDevice.close();
                 cameraDevice = null;
             }
@@ -586,36 +594,8 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
-    public void startCamera(int ratio, HashMap<String, Object> keys) {
-        try {
-            this.ratioType = ratio;
-            img_takephoto.setClickable(true);
-            this.requestCode = keys;
-            startBackgroundThread();
-            if (textureView.isAvailable()) {
-                openCamera(textureView.getWidth(), textureView.getHeight(), ratioType);
-            } else {
-                textureView.setSurfaceTextureListener(this);
-            }
-        } catch (Exception ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-            }
-            return;
-        }
-    }
-
-    public void stopCamera() {
-        try {
-            closeCamera();
-            stopBackgroundThread();
-        } catch (Exception ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-            }
-            return;
-        }
-
+    public void stop() {
+        stopThread();
     }
 
     private void switchFlash() {
@@ -642,7 +622,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                             Toast.makeText(activity, "Flash off.", Toast.LENGTH_SHORT).show();
                             break;
                     }
-                    cameraCaptureSessions.setRepeatingRequest(captureRequestBuilder.build(), null, mBackgroundHandler);
+                    captureSessions.setRepeatingRequest(captureRequestBuilder.build(), null, handler);
                 } catch (Exception ex) {
                     if (callback != null) {
                         callback.onError(ex.getMessage());
@@ -654,43 +634,134 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
+    private void capture() {
+        try {
+            img_capture.setClickable(false);
+            if (isSound) {
+                media = MediaPlayer.create(getContext(), R.raw.camera_take_picture);
+                media.start();
+            }
+            Size maxImage = SizeUtils.getMaxImage(activity, ratio, cameraId);
+            if (maxImage != null) {
+                if (maxImage.getWidth() >= 2048) {
+                    if (ratio == 43) {
+                        maxImage = new Size(2048, 1536);
+                    } else {
+                        maxImage = new Size(2048, 1152);
+                    }
+                }
+
+            }
+            ImageReader reader = ImageReader.newInstance(maxImage.getWidth(), maxImage.getHeight(), ImageFormat.JPEG, 2);
+            List<Surface> outputSurfaces = new ArrayList<Surface>(2);
+            outputSurfaces.add(reader.getSurface());
+            outputSurfaces.add(new Surface(textureView.getSurfaceTexture()));
+            final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            captureBuilder.addTarget(reader.getSurface());
+            captureBuilder.set(CaptureRequest.JPEG_QUALITY, (byte) 100);
+            captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                    CaptureRequest.CONTROL_AF_TRIGGER_START);
+            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+            switch (mTotalRotation) {
+                case SENSOR_ORIENTATION_DEFAULT_DEGREES:
+                    captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, INVERSE_ORIENTATIONS.get(rotation));
+                    break;
+                case SENSOR_ORIENTATION_INVERSE_DEGREES:
+                    captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
+                    break;
+            }
+            ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(final ImageReader reader) {
+                    HandelImage handelImage = new HandelImage(reader, cameraId);
+                    handleImageThread = new Thread(handelImage);
+                    handleImageThread.start();
+                }
+            };
+            reader.setOnImageAvailableListener(readerListener, handler);
+            final CameraCaptureSession.CaptureCallback captureListener = new CameraCaptureSession.CaptureCallback() {
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+                }
+
+                @Override
+                public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
+                    super.onCaptureFailed(session, request, failure);
+                    img_capture.setClickable(true);
+                }
+            };
+
+            cameraDevice.createCaptureSession(outputSurfaces, new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onReady(@NonNull CameraCaptureSession session) {
+                    super.onReady(session);
+                }
+
+                @Override
+                public void onConfigured(final CameraCaptureSession session) {
+                    try {
+                        session.capture(captureBuilder.build(), captureListener, handler);
+                    } catch (CameraAccessException ex) {
+                        if (callback != null) {
+                            callback.onError(ex.getMessage());
+                            return;
+                        }
+                    }
+                }
+
+                @Override
+                public void onConfigureFailed(CameraCaptureSession session) {
+                    stopThread();
+                }
+
+                @Override
+                public void onClosed(CameraCaptureSession session) {
+                    super.onClosed(session);
+                    if (media != null) {
+                        media.stop();
+                    }
+                }
+            }, handler);
+
+        } catch (CameraAccessException ex) {
+            if (callback != null) {
+                callback.onError(ex.getMessage());
+                return;
+            }
+        }
+    }
+
+    public void isAutoFocus(boolean isFocus) {
+        this.isFocus = isFocus;
+    }
+
+    public void isSound(boolean isSound) {
+        this.isSound = isSound;
+    }
+
     private boolean isFlashSupported() throws CameraAccessException {
-        CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+        CameraManager manager = (CameraManager) activity.getSystemService(activity.CAMERA_SERVICE);
         final CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
         Boolean available = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
         isFlashSupported = available == null ? false : available;
         return isFlashSupported;
     }
 
-    public void reopenCamera() {
-        try {
-            if (textureView.isAvailable()) {
-                openCamera(textureView.getWidth(), textureView.getHeight(), ratioType);
-            } else {
-                textureView.setSurfaceTextureListener(this);
-            }
-        } catch (Exception ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-            }
-            return;
-        }
-    }
-
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private boolean isHardwareLevelSupported(int requiredLevel) {
-        boolean res = false;
+        boolean result = false;
         if (cameraDevice == null)
-            return res;
+            return result;
         try {
-            CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
-            CameraCharacteristics cameraCharacteristics = manager.getCameraCharacteristics(cameraId);
+            manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+            characteristics = manager.getCameraCharacteristics(cameraId);
 
-            int deviceLevel = cameraCharacteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+            int deviceLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
             if (deviceLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) {
-                res = requiredLevel == deviceLevel;
+                result = requiredLevel == deviceLevel;
             } else {
-                res = requiredLevel <= deviceLevel;
+                result = requiredLevel <= deviceLevel;
             }
 
         } catch (Exception ex) {
@@ -698,7 +769,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                 callback.onError(ex.getMessage());
             }
         }
-        return res;
+        return result;
     }
 
     private boolean isAutoFocusSupported() {
@@ -711,7 +782,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
             return 0;
         Float minimumLens = null;
         try {
-            CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+            manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
             CameraCharacteristics c = manager.getCameraCharacteristics(cameraId);
             minimumLens = c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
         } catch (Exception ex) {
@@ -725,9 +796,8 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     }
 
 
-    private boolean checkBackCamera() {
+    private boolean isBackCameraAvailable() {
         String backCameraId = null;
-        CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         try {
             for (String cameraId : manager.getCameraIdList()) {
                 CameraCharacteristics cameraCharacteristics = manager.getCameraCharacteristics(cameraId);
@@ -751,165 +821,15 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
-    private void takePicture() {
-        try {
-            img_takephoto.setClickable(false);
-            if (enableSound) {
-                mediaPlayer = MediaPlayer.create(getContext(), R.raw.camera_take_picture);
-                mediaPlayer.start();
-            }
-            Size maxImage = SizeUtils.getMaxImage(activity,ratioType,cameraId);
-            ImageReader reader = ImageReader.newInstance(maxImage.getWidth(), maxImage.getHeight(), ImageFormat.JPEG, 2);
-            List<Surface> outputSurfaces = new ArrayList<Surface>(2);
-            outputSurfaces.add(reader.getSurface());
-            outputSurfaces.add(new Surface(textureView.getSurfaceTexture()));
-            final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
-            captureBuilder.addTarget(reader.getSurface());
-            captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_TRIGGER_START);
-            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            switch (mTotalRotation) {
-                case SENSOR_ORIENTATION_DEFAULT_DEGREES:
-                    captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, INVERSE_ORIENTATIONS.get(rotation));
-                    break;
-                case SENSOR_ORIENTATION_INVERSE_DEGREES:
-                    captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
-                    break;
-            }
-            ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
-                @Override
-                public void onImageAvailable(final ImageReader reader) {
-                    Runnable saveImages = new SaveImage(reader, cameraId);
-                    new Thread(saveImages).start();
-                }
-            };
-            reader.setOnImageAvailableListener(readerListener, mBackgroundHandler);
-            final CameraCaptureSession.CaptureCallback captureListener = new CameraCaptureSession.CaptureCallback() {
-                @Override
-                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                    super.onCaptureCompleted(session, request, result);
-                    Runnable displayImage = new DisplayImage();
-                    new Thread(displayImage).start();
-                }
-
-                @Override
-                public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
-                    super.onCaptureFailed(session, request, failure);
-                    img_takephoto.setClickable(true);
-                }
-            };
-            cameraDevice.createCaptureSession(outputSurfaces, new CameraCaptureSession.StateCallback() {
-                @Override
-                public void onReady(@NonNull CameraCaptureSession session) {
-                    super.onReady(session);
-                }
-
-                @Override
-                public void onConfigured(final CameraCaptureSession session) {
-                    try {
-                        session.capture(captureBuilder.build(), captureListener, mBackgroundHandler);
-                    } catch (CameraAccessException ex) {
-                        if (callback != null) {
-                            callback.onError(ex.getMessage());
-                            return;
-                        }
-                    }
-                }
-
-                @Override
-                public void onConfigureFailed(CameraCaptureSession session) {
-                    stopBackgroundThread();
-                }
-
-                @Override
-                public void onClosed(CameraCaptureSession session) {
-                    super.onClosed(session);
-                    if (mediaPlayer != null) {
-                        mediaPlayer.stop();
-                    }
-                }
-            }, mBackgroundHandler);
-
-        } catch (CameraAccessException ex) {
-            if (callback != null) {
-                callback.onError(ex.getMessage());
-                return;
-            }
-        }
-    }
-
-    private class DisplayImage implements Runnable {
-        @Override
-        public void run() {
-            try {
-                Bitmap desct = ImageUtils.decodeSampledBitmapFromPath(path, 500, 500);
-                while (desct == null) {
-                    desct = ImageUtils.decodeSampledBitmapFromPath(path, 500, 500);
-                }
-                if (cameraId.equals(CAMERA_BACK)) {
-                    if (desct.getWidth() < desct.getHeight()) {
-                        Matrix matrix = new Matrix();
-                        bitmap = Bitmap.createBitmap(desct, 0, 0,
-                                desct.getWidth(), desct.getHeight(), matrix, true);
-                    } else {
-                        Matrix matrix = new Matrix();
-                        matrix.postRotate(90);
-                        bitmap = Bitmap.createBitmap(desct, 0, 0,
-                                desct.getWidth(), desct.getHeight(), matrix, true);
-                    }
-                } else {
-                    if (desct.getWidth() < desct.getHeight()) {
-                        Matrix matrix = new Matrix();
-                        matrix.setScale(-1, 1);
-                        bitmap = Bitmap.createBitmap(desct, 0, 0,
-                                desct.getWidth(), desct.getHeight(), matrix, true);
-                    } else {
-                        Matrix matrix = new Matrix();
-                        matrix.setScale(-1, 1);
-                        matrix.postRotate(90);
-                        bitmap = Bitmap.createBitmap(desct, 0, 0,
-                                desct.getWidth(), desct.getHeight(), matrix, true);
-                    }
-                }
-                activity.runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        img_takephoto.setClickable(true);
-                        if (bitmap != null) {
-                            layout_option.setVisibility(GONE);
-                            layout_take_photo.setVisibility(GONE);
-                            layout_action.setVisibility(VISIBLE);
-                            isShowAction = true;
-                            img_temp.setImageBitmap(bitmap);
-                        }
-                    }
-                });
-            } catch (Exception ex) {
-                if (callback != null) {
-                    callback.onError(ex.getMessage());
-                }
-            }
-
-        }
-    }
-
-    public void enableAutoFocus(boolean autoFocus) {
-        this.autoFocus = autoFocus;
-    }
-
-    public void enableSound(boolean enableSound) {
-        this.enableSound = enableSound;
-    }
-
-    public boolean isShowAction() {
+    public boolean getAction() {
         return isShowAction;
     }
 
-    private class SaveImage implements Runnable {
+    private class HandelImage implements Runnable {
         private ImageReader reader;
         private String cameraId;
 
-        public SaveImage(ImageReader reader, String cameraId) {
+        public HandelImage(ImageReader reader, String cameraId) {
             this.reader = reader;
             this.cameraId = cameraId;
         }
@@ -917,29 +837,59 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         @Override
         public void run() {
             try {
-                File root = null;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    root = new File(activity.getExternalFilesDir(null), "/IMAGE_ACACY");
-                    if (!root.exists()) {
-                        root.mkdirs();
-                    }
-                } else {
-                    root = new File(Environment.getExternalStorageDirectory(), "/IMAGE_ACACY");
-                    if (!root.exists()) {
-                        root.mkdirs();
-                    }
+                final File dsFile = new File(path);
+                if (dsFile.exists()) {
+                    dsFile.delete();
+                    dsFile.createNewFile();
                 }
-                if (root.exists()) {
-                    final File dsFile = new File(root.getAbsolutePath() + "/IMAGE_TEMP_ACACY" + ".jpg");
-                    path = dsFile.getAbsolutePath();
-                    if (dsFile.exists()) {
-                        dsFile.delete();
-                        dsFile.createNewFile();
-                        if (dsFile.exists()) {
-                            ImageUtils.getInstance().saveImage(dsFile, reader, cameraId);
+                if (ImageUtils.saveImage(dsFile, reader, cameraId)) {
+                    try {
+                        Bitmap desct = ImageUtils.decodeSampledBitmapFromPath(path, 500, 500);
+                        while (desct == null) {
+                            desct = ImageUtils.decodeSampledBitmapFromPath(path, 500, 500);
                         }
-                    } else {
-                        ImageUtils.getInstance().saveImage(dsFile, reader, cameraId);
+                        if (cameraId.equals(CAMERA_BACK)) {
+                            if (desct.getWidth() < desct.getHeight()) {
+                                Matrix matrix = new Matrix();
+                                bitmap = Bitmap.createBitmap(desct, 0, 0,
+                                        desct.getWidth(), desct.getHeight(), matrix, true);
+                            } else {
+                                Matrix matrix = new Matrix();
+                                matrix.postRotate(90);
+                                bitmap = Bitmap.createBitmap(desct, 0, 0,
+                                        desct.getWidth(), desct.getHeight(), matrix, true);
+                            }
+                        } else {
+                            if (desct.getWidth() < desct.getHeight()) {
+                                Matrix matrix = new Matrix();
+                                matrix.setScale(-1, 1);
+                                bitmap = Bitmap.createBitmap(desct, 0, 0,
+                                        desct.getWidth(), desct.getHeight(), matrix, true);
+                            } else {
+                                Matrix matrix = new Matrix();
+                                matrix.setScale(-1, 1);
+                                matrix.postRotate(90);
+                                bitmap = Bitmap.createBitmap(desct, 0, 0,
+                                        desct.getWidth(), desct.getHeight(), matrix, true);
+                            }
+                        }
+                        activity.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                img_capture.setClickable(true);
+                                if (bitmap != null) {
+                                    layout_option.setVisibility(GONE);
+                                    layout_take_photo.setVisibility(GONE);
+                                    layout_action.setVisibility(VISIBLE);
+                                    isShowAction = true;
+                                    img_temp.setImageBitmap(bitmap);
+                                }
+                            }
+                        });
+                    } catch (Exception ex) {
+                        if (callback != null) {
+                            callback.onError(ex.getMessage());
+                        }
                     }
                 }
             } catch (final Exception ex) {

@@ -281,7 +281,6 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                     File file = new File(path);
                     if (file.exists()) {
                         callback.onPicture(path, data);
-                        activity.finish();
                     }else {
                         callback.onError("Lưu ảnh không thành công, vui lòng thử lại");
                     }

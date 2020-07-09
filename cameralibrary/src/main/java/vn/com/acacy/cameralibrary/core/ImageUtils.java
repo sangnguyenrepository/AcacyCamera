@@ -26,7 +26,7 @@ import java.util.List;
 @SuppressLint("NewApi")
 public class ImageUtils {
     public static synchronized boolean saveImage(final File file, ImageReader reader, String cameraId) {
-        boolean isFinish = false;
+        boolean isFinish = true;
         Image image = null;
         image = reader.acquireLatestImage();
         ByteBuffer buffer = image.getPlanes()[0].getBuffer();
@@ -39,7 +39,6 @@ public class ImageUtils {
             output.flush();
             output.close();
             image.close();
-            isFinish = saveBitmapFile(file, cameraId);
         } catch (FileNotFoundException ex) {
             isFinish = false;
         } catch (IOException ex) {

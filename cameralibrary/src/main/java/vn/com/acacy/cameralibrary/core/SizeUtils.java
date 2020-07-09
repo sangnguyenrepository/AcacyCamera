@@ -126,10 +126,9 @@ public class SizeUtils {
         return true;
     }
 
-    public static Size getMaxImage(Activity activity, int rationType, String cameraId) {
+    public static Size getMaxImage(Activity activity, int rationType, String cameraId, int widthTarget) {
         Size maxSize = null;
         List<Size> sizeDevice = new ArrayList<>();
-        Size[] sizesCollect = null;
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         try {
             cameraId = manager.getCameraIdList()[0];
@@ -170,11 +169,19 @@ public class SizeUtils {
             if (sizeDevice.isEmpty()) {
                 sizeDevice.add(getMaxImageDefault(activity, cameraId));
             }
-            sizesCollect = new Size[sizeDevice.size()];
-            sizeDevice.toArray(sizesCollect);
-            maxSize = Collections.max(
-                    Arrays.asList(sizesCollect),
-                    new CompareSizesByArea());
+            List<Size> sizesCollect = new ArrayList<>();
+            for (Size size : sizeDevice) {
+                if (size.getWidth() >= widthTarget) {
+                    maxSize = size;
+                    break;
+                } else {
+                    sizesCollect.add(size);
+                }
+            }
+            if (maxSize == null && sizesCollect.size() > 0) {
+                maxSize = Collections.max(
+                        sizesCollect, new CompareSizesByArea());
+            }
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }

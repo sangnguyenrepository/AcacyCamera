@@ -16,7 +16,6 @@ import androidx.core.app.ActivityCompat;
 import java.util.HashMap;
 
 import vn.com.acacy.cameralibrary.YCamera;
-import vn.com.acacy.cameralibrary.interfaces.ICameraAction;
 import vn.com.acacy.cameralibrary.interfaces.ICameraCallback;
 
 public class CameraActivity extends AppCompatActivity implements ICameraCallback {
@@ -26,7 +25,6 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
     private int ratio;
     private static CameraResultListener listener;
     private AlertDialog alert = null;
-    private ICameraAction action;
     private String path = "";
 
     @Override
@@ -35,7 +33,8 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
         setContentView(R.layout.activity_camera);
         camera = findViewById(R.id.aca_camera);
         camera.isAutoFocus(true);
-        camera.isSound(true);
+        camera.isSound(false);
+        camera.setWidthTarget(3264);
         camera.setCameraCallBack(this);
         path = Environment.getExternalStorageDirectory() + "/IMAGE_ACACY/" + "IMAGE_TEMP_ACACY" + ".jpg";
         try {

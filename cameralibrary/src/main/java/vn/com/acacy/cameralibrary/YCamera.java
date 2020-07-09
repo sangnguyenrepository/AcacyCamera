@@ -123,6 +123,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     public static final String REQUEST_CODE = "REQUEST_CODE";
     public static final String DATA = "DATA";
     public Thread handleImageThread;
+    public int widthTarget;
 
     public YCamera(Context context) {
         super(context);
@@ -280,6 +281,9 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                     File file = new File(path);
                     if (file.exists()) {
                         callback.onPicture(path, data);
+                        activity.finish();
+                    }else {
+                        callback.onError("Lưu ảnh không thành công, vui lòng thử lại");
                     }
                 }
                 isShowAction = false;
@@ -341,7 +345,8 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     }
 
     @Override
-    public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) { }
+    public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
+    }
 
     private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
         @Override
@@ -506,7 +511,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                     maxPreviewHeight = MAX_PREVIEW_HEIGHT;
                 }
 
-                Size largest = SizeUtils.getMaxImage(activity, ratio, cameraId);
+                Size largest = SizeUtils.getMaxImage(activity, ratio, cameraId, widthTarget);
                 sizePreview = SizeUtils.chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest, ratio);
                 int orientation = getResources().getConfiguration().orientation;
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -545,12 +550,10 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                         captureSessions = cameraCaptureSession;
                         if (isFocus && isAutoFocusSupported()) {
                             textureView.setOnTouchListener(null);
-                            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                            captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
                         } else {
                             textureView.setOnTouchListener(new OnTouchHandler(characteristics, captureRequestBuilder, cameraCaptureSession, handler));
                         }
-
                         captureSessions.setRepeatingRequest(captureRequestBuilder.build(), null, handler);
                     } catch (CameraAccessException ex) {
                         if (callback != null) {
@@ -641,17 +644,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                 media = MediaPlayer.create(getContext(), R.raw.camera_take_picture);
                 media.start();
             }
-            Size maxImage = SizeUtils.getMaxImage(activity, ratio, cameraId);
-            if (maxImage != null) {
-                if (maxImage.getWidth() >= 2048) {
-                    if (ratio == 43) {
-                        maxImage = new Size(2048, 1536);
-                    } else {
-                        maxImage = new Size(2048, 1152);
-                    }
-                }
-
-            }
+            Size maxImage = SizeUtils.getMaxImage(activity, ratio, cameraId, widthTarget);
             ImageReader reader = ImageReader.newInstance(maxImage.getWidth(), maxImage.getHeight(), ImageFormat.JPEG, 2);
             List<Surface> outputSurfaces = new ArrayList<Surface>(2);
             outputSurfaces.add(reader.getSurface());
@@ -775,6 +768,10 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     private boolean isAutoFocusSupported() {
         boolean isSupport = isHardwareLevelSupported(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) || getMinimumFocusDistance() > 0;
         return isSupport;
+    }
+
+    public void setWidthTarget(int widthTarget) {
+        this.widthTarget = widthTarget;
     }
 
     private float getMinimumFocusDistance() {

@@ -4,18 +4,28 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
+import android.graphics.Matrix;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
+import android.hardware.Camera;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.os.Build;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.Size;
 import android.view.Display;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -170,18 +180,24 @@ public class SizeUtils {
                 sizeDevice.add(getMaxImageDefault(activity, cameraId));
             }
             List<Size> sizesCollect = new ArrayList<>();
-            for (Size size : sizeDevice) {
-                if (size.getWidth() >= widthTarget) {
-                    maxSize = size;
-                    break;
-                } else {
-                    sizesCollect.add(size);
+            if (widthTarget!=0){
+                for (Size size : sizeDevice) {
+                    if (size.getWidth() >= widthTarget) {
+                        maxSize = size;
+                        break;
+                    } else {
+                        sizesCollect.add(size);
+                    }
                 }
-            }
-            if (maxSize == null && sizesCollect.size() > 0) {
+                if (maxSize == null && sizesCollect.size() > 0) {
+                    maxSize = Collections.max(
+                            sizesCollect, new CompareSizesByArea());
+                }
+            }else {
                 maxSize = Collections.max(
-                        sizesCollect, new CompareSizesByArea());
+                        sizeDevice, new CompareSizesByArea());
             }
+
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -265,4 +281,143 @@ public class SizeUtils {
         activity.getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
         return displayMetrics.heightPixels + +getNavigationBarHeight(activity);
     }
+
+    public static String Resize(String cameraID,final File fileResize, final int With) {
+        if (!fileResize.exists()) {
+            throw new RuntimeException("File not exists");
+        }
+        String FilePath = null;
+        Bitmap imageSource = null;
+        try {
+            try {
+                imageSource = BitmapFactory.decodeFile(fileResize.getPath());
+            } catch (Exception e) {
+                System.gc();
+                try {
+                    BitmapFactory.Options o2 = new BitmapFactory.Options();
+                    o2.inSampleSize = 8;
+                    o2.inJustDecodeBounds = false;
+                    o2.inPreferredConfig = Bitmap.Config.RGB_565;
+                    o2.inDither = true;
+                    imageSource = BitmapFactory.decodeFile(fileResize.getPath(), o2);
+                } catch (Exception e2) {
+                    System.gc();
+                    try {
+                        BitmapFactory.Options o2 = new BitmapFactory.Options();
+                        o2.inSampleSize = 6;
+                        o2.inPreferredConfig = Bitmap.Config.RGB_565;
+                        imageSource = BitmapFactory.decodeFile(fileResize.getPath(), o2);
+                    } catch (Exception e3) {
+                        System.gc();
+                        try {
+                            BitmapFactory.Options o2 = new BitmapFactory.Options();
+                            o2.inSampleSize = 4;
+                            imageSource = BitmapFactory.decodeFile(fileResize.getPath(), o2);
+
+                        } catch (Exception e4) {
+                            throw new RuntimeException("File not exists");
+                        }
+                    }
+                }
+            }
+            if (imageSource == null) {
+                throw new RuntimeException("File not exists");
+            }
+            File file = new File(fileResize.getParent(), "Resize");
+            if (!file.exists()) {
+                file.mkdirs();
+            }
+            file = new File(file, "RS_" + fileResize.getName());
+            double xFactor = 0;
+            double width = Double.valueOf(imageSource.getWidth());
+            Log.v("WIDTH", String.valueOf(width));
+            double height = Double.valueOf(imageSource.getHeight());
+            Log.v("height", String.valueOf(height));
+            if (width > height) {
+                xFactor = With / width;
+            } else {
+                xFactor = With / height;
+            }
+            int Nheight = (int) ((xFactor * height));
+            int NWidth = (int) (xFactor * width);
+            Bitmap bm = Bitmap.createScaledBitmap(imageSource, NWidth, Nheight, true);
+            if (imageSource != bm) {
+                imageSource.recycle();
+            }
+            // Rotation
+
+            Matrix matrix = new Matrix();
+            Camera.CameraInfo info = new Camera.CameraInfo();
+            android.hardware.Camera.getCameraInfo(Integer.parseInt(cameraID), info);
+            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                float[] mirrorY = {-1, 0, 0, 0, 1, 0, 0, 0, 1};
+                Matrix matrixMirrorY = new Matrix();
+                matrixMirrorY.setValues(mirrorY);
+                matrix.postConcat(matrixMirrorY);
+            }
+            matrix.postRotate(90);
+            Bitmap adjustedBitmap  = Bitmap.createBitmap(bm, 0, 0, bm.getWidth(), bm.getHeight(), matrix, true);
+            FileOutputStream ostream = null;
+            try {
+                ostream = new FileOutputStream(file);
+                adjustedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, ostream);
+                ostream.close();
+                FilePath = file.getPath();
+                if (FilePath == null)
+                    FilePath = moveFile(fileResize).getPath();
+                ClearTemp(fileResize.getParent());
+            } catch (Exception ex) {
+                throw ex;
+            } finally {
+                ostream.close();
+                adjustedBitmap.recycle();
+                bm.recycle();
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return FilePath;
+    }
+
+    public static void ClearTemp(String Folder) {
+        File f = new File(Folder);
+        if (f.isDirectory())
+            for (File temp : f.listFiles()) {
+                temp.delete();
+            }
+    }
+
+
+    public static File moveFile(File filemove) {
+
+        InputStream in = null;
+        OutputStream out = null;
+        try {
+            File dir = new File(filemove.getParent(), "NoResize");
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            dir = new File(dir, filemove.getName());
+            out = new FileOutputStream(dir);
+            in = new FileInputStream(filemove.getPath());
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            in.close();
+            in = null;
+            // write the output file
+            out.flush();
+            out.close();
+            out = null;
+            // delete the original file
+            filemove.delete();
+            return dir;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return filemove;
+    }
+
 }

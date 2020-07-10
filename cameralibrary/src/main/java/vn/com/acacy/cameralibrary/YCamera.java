@@ -124,6 +124,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
     public static final String DATA = "DATA";
     public Thread handleImageThread;
     public int widthTarget;
+    public int resize;
 
     public YCamera(Context context) {
         super(context);
@@ -281,7 +282,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                     File file = new File(path);
                     if (file.exists()) {
                         callback.onPicture(path, data);
-                    }else {
+                    } else {
                         callback.onError("Lưu ảnh không thành công, vui lòng thử lại");
                     }
                 }
@@ -817,6 +818,10 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
         }
     }
 
+    public void setResize(int resize) {
+        this.resize = resize;
+    }
+
     public boolean getAction() {
         return isShowAction;
     }
@@ -840,6 +845,7 @@ public class YCamera extends RelativeLayout implements View.OnClickListener, Tex
                 }
                 if (ImageUtils.saveImage(dsFile, reader, cameraId)) {
                     try {
+                        path = SizeUtils.Resize(cameraId, dsFile, resize);
                         Bitmap desct = ImageUtils.decodeSampledBitmapFromPath(path, 500, 500);
                         while (desct == null) {
                             desct = ImageUtils.decodeSampledBitmapFromPath(path, 500, 500);

@@ -6,6 +6,7 @@ import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Environment;
+import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
@@ -34,9 +35,10 @@ public class CameraActivity extends AppCompatActivity implements ICameraCallback
         camera = findViewById(R.id.aca_camera);
         camera.isAutoFocus(true);
         camera.isSound(false);
-        camera.setWidthTarget(3264);
+        camera.setWidthTarget(0);
+        camera.setResize(1024);
         camera.setCameraCallBack(this);
-        path = Environment.getExternalStorageDirectory() + "/IMAGE_ACACY/" + "IMAGE_TEMP_ACACY" + ".jpg";
+        path = this.getExternalFilesDir(null) + "/IMAGE_TEMP_ACACY" + ".jpg";
         try {
             data = (HashMap<String, Object>) getIntent().getSerializableExtra("DATA");
             ratio = getIntent().getIntExtra("RATIO", 43);

@@ -1,15 +1,24 @@
 package vn.com.acacy.acacycamera;
 
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.view.View;
-import android.widget.Toast;
 
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
-import java.util.HashMap;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 
-import vn.com.acacy.cameralibrary.YCamera;
+import vn.com.acacy.cameralibrary.AcaCamera;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -17,12 +26,21 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Intent intent = new Intent(this, CameraActivity.class);
-        HashMap<String, Object> data = new HashMap<>();
-        data.put(YCamera.REQUEST_CODE, 500);
-        intent.putExtra(YCamera.DATA, data);
-        startActivity(intent);
-        CameraActivity.setCameraListener(listener);
+
+        File f = new File(Environment.getExternalStorageDirectory(), "IMG_TEMP");
+        if (!f.exists())
+            f.mkdir();
+        String path = Environment.getExternalStorageDirectory() + "/IMG_TEMP/" + "temp.jpg";
+        File file = new File(path);
+        try {
+            if (file.exists()) {
+                file.delete();
+            }
+            file.createNewFile();
+            AcaCamera.activity(this).destination(Uri.fromFile(file), 500).setWidthTarget(1440).enableSound(true).start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -42,11 +60,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    CameraActivity.CameraResultListener listener = new CameraActivity.CameraResultListener() {
-        @Override
-        public void onCameraResult(String path, HashMap<String, Object> data) {
-            Toast.makeText(MainActivity.this, path, Toast.LENGTH_SHORT).show();
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 500) {
         }
-    };
+    }
+
 
 }

@@ -1,2 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="vn.com.acacy.cameralibrary" />
+    package="vn.com.acacy.cameralibrary">
+
+    <application>
+        <activity
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:name=".CameraActivity" />
+        <meta-data
+            android:name="android.max_aspect"
+            android:value="2.1" />
+    </application>
+    <uses-feature android:name="android.hardware.camera2.full" />
+
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+</manifest>

@@ -7,10 +7,11 @@ import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
-import android.hardware.Camera;
-import android.media.ExifInterface;
 import android.media.Image;
 import android.media.ImageReader;
+import android.util.Size;
+
+import androidx.exifinterface.media.ExifInterface;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -25,7 +26,7 @@ import java.util.List;
 
 @SuppressLint("NewApi")
 public class ImageUtils {
-    public static synchronized boolean saveImage(final File file, ImageReader reader, String cameraId) {
+    public static synchronized boolean saveImage(final File file, ImageReader reader) {
         boolean isFinish = true;
         Image image = null;
         image = reader.acquireLatestImage();
@@ -55,6 +56,49 @@ public class ImageUtils {
         return out.toByteArray();
     }
 
+    public static Bitmap rotateBitmap(Bitmap bitmap, int orientation) {
+
+        Matrix matrix = new Matrix();
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_NORMAL:
+                return bitmap;
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                matrix.setScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                matrix.setRotate(180);
+                break;
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                matrix.setRotate(180);
+                matrix.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+                matrix.setRotate(90);
+                matrix.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                matrix.setRotate(90);
+                break;
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+                matrix.setRotate(-90);
+                matrix.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                matrix.setRotate(-90);
+                break;
+            default:
+                return bitmap;
+        }
+        try {
+            Bitmap bmRotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+            bitmap.recycle();
+            return bmRotated;
+        }
+        catch (OutOfMemoryError e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
     private static byte[] YUV420toNV21(Image image) {
         Rect crop = image.getCropRect();
         int format = image.getFormat();
@@ -112,28 +156,61 @@ public class ImageUtils {
         return data;
     }
 
-    private static int exifToDegrees(int exifOrientation) {
-        if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_90) {
-            return 90;
-        } else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_180) {
-            return 180;
-        } else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_270) {
-            return 270;
+    public static synchronized void configureImages(File file, Size size) {
+        try {
+            Bitmap bitmap = null;
+            Matrix matrix = new Matrix();
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = calculateInSampleSize(options, size.getWidth(), size.getHeight());
+            options.inScaled = false;
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            options.inDensity = Math.max(options.outWidth, options.outHeight);
+            Bitmap source = null;
+            while (source == null) {
+                source = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+            }
+            ExifInterface exif = new ExifInterface(file.getPath());
+            int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_UNDEFINED);
+            switch (orientation) {
+                case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                    matrix.setScale(-1, 1);
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_180:
+                    matrix.setRotate(180);
+                    break;
+                case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                    matrix.setRotate(180);
+                    matrix.postScale(-1, 1);
+                    break;
+                case ExifInterface.ORIENTATION_TRANSPOSE:
+                    matrix.setRotate(90);
+                    matrix.postScale(-1, 1);
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_90:
+                    matrix.setRotate(90);
+                    break;
+                case ExifInterface.ORIENTATION_TRANSVERSE:
+                    matrix.setRotate(-90);
+                    matrix.postScale(-1, 1);
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_270:
+                    matrix.setRotate(-90);
+                    break;
+                default:
+            }
+            OutputStream outputStream = new FileOutputStream(file);
+            bitmap = Bitmap.createBitmap(
+                    source, 0, 0, source.getWidth(), source.getHeight(), matrix, false);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+            outputStream.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
-        return 0;
     }
 
-    public static boolean saveBitmapFile(File file, String cameraId) throws IOException {
-        try {
-            Bitmap bitmap = MakeSquare(readBytesFromFile(file.getAbsolutePath()), Integer.parseInt(cameraId));
-            file.createNewFile();
-            FileOutputStream outputStream = new FileOutputStream(file);
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
-        } catch (FileNotFoundException e) {
-            return false;
-        }
-        return true;
-    }
 
     private static byte[] readBytesFromFile(String filePath) {
         FileInputStream fileInputStream = null;
@@ -162,27 +239,6 @@ public class ImageUtils {
             return true;
         }
         return false;
-    }
-
-    public static Bitmap MakeSquare(byte[] data, int cameraID) {
-        int width;
-        int height;
-        Matrix matrix = new Matrix();
-        Camera.CameraInfo info = new Camera.CameraInfo();
-        android.hardware.Camera.getCameraInfo(cameraID, info);
-        Bitmap bitPic = BitmapFactory.decodeByteArray(data, 0, data.length);
-        width = bitPic.getWidth();
-        height = bitPic.getHeight();
-        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            float[] mirrorY = {-1, 0, 0, 0, 1, 0, 0, 0, 1};
-            Matrix matrixMirrorY = new Matrix();
-            matrixMirrorY.setValues(mirrorY);
-            matrix.postConcat(matrixMirrorY);
-        }
-        matrix.postRotate(90);
-        Bitmap bitPicFinal = Bitmap.createBitmap(bitPic, 0, 0, width, height, matrix, true);
-        bitPic.recycle();
-        return bitPicFinal;
     }
 
     public static List<String> getListImage(String root) {
@@ -255,8 +311,8 @@ public class ImageUtils {
         return inSampleSize;
     }
 
-    public static Bitmap decodeSampledBitmapFromPath(String path,
-                                                     int reqWidth, int reqHeight) {
+    public static synchronized Bitmap decodeSampledBitmapFromPath(String path,
+                                                                  int reqWidth, int reqHeight) {
 
         final BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;

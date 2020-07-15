@@ -4,6 +4,7 @@
 
     <application>
         <activity
+            android:theme="@style/AppTheme"
             android:screenOrientation="portrait"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:name=".CameraActivity" />

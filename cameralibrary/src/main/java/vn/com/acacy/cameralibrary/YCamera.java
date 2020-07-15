@@ -42,6 +42,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import vn.com.acacy.cameralibrary.core.DateTime;
 import vn.com.acacy.cameralibrary.core.ImageUtils;
@@ -114,6 +116,7 @@ public class YCamera extends RelativeLayout implements TextureView.SurfaceTextur
     private int requestCode;
     private Size maxImage;
     private int deviceOrientation;
+    private ExecutorService executorService;
 
 
     public YCamera(Context context) {
@@ -143,6 +146,7 @@ public class YCamera extends RelativeLayout implements TextureView.SurfaceTextur
             manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
             characteristics = manager.getCameraCharacteristics(cameraId);
             deviceOrientation = 0;
+            executorService = Executors.newFixedThreadPool(2);
         } catch (CameraAccessException ex) {
             if (callback != null) {
                 callback.onError(ex.getMessage());
@@ -584,9 +588,8 @@ public class YCamera extends RelativeLayout implements TextureView.SurfaceTextur
             ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(final ImageReader reader) {
-                    HandelImage handelImage = new HandelImage(reader);
-                    handleImageThread = new Thread(handelImage);
-                    handleImageThread.start();
+                    SaveImage saveImage = new SaveImage(reader);
+                    executorService.submit(saveImage);
                 }
             };
             reader.setOnImageAvailableListener(readerListener, handler);
@@ -758,10 +761,10 @@ public class YCamera extends RelativeLayout implements TextureView.SurfaceTextur
         this.isShowAction = action;
     }
 
-    private class HandelImage implements Runnable {
+    private class SaveImage implements Runnable {
         private ImageReader reader;
 
-        public HandelImage(ImageReader reader) {
+        public SaveImage(ImageReader reader) {
             this.reader = reader;
         }
 
